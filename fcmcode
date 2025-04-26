@@ -1,0 +1,200 @@
+# Import necessary libraries
+from sklearn.metrics import silhouette_score
+import matplotlib.pyplot as plt
+from skfuzzy import cmeans
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from skfuzzy.cluster import cmeans, cmeans_predict
+# First, let's calculate silhouette score for the existing K-means clustering
+X = np.dot(evtsE[goodEvts,:], u[:,0:3])  # Your projected data
+kmeans_silhouette = silhouette_score(X, c10)
+print(f"Silhouette Score for KMeans with 10 clusters: {kmeans_silhouette:.4f}")
+# Calculate K-means silhouette scores for different numbers of clusters
+silhouette_scores = []
+range_n_clusters = list(range(2, 15))
+for n_clusters in range_n_clusters:
+    # Initialize the clusterer with n_clusters
+    kmeans = KMeans(n_clusters=n_clusters, init='k-means++', n_init=100, max_iter=100)
+    
+    # Fit the data and predict cluster labels
+    cluster_labels = kmeans.fit_predict(X)
+    
+    # Calculate the silhouette score
+    silhouette_avg = silhouette_score(X, cluster_labels)
+    silhouette_scores.append(silhouette_avg)
+    
+    # Print the score
+    print(f"For n_clusters = {n_clusters}, the silhouette score is {silhouette_avg:.4f}")
+# Plot the results for K-means
+plt.figure(figsize=(10, 6))
+plt.plot(range_n_clusters, silhouette_scores, 'o-')
+plt.xlabel('Number of Clusters')
+plt.ylabel('Silhouette Score')
+plt.title('Silhouette Score Method to Determine Optimal k')
+plt.grid(True)
+plt.show()
+# Now implement Fuzzy C-means clustering
+# Feature extraction and preparation for FCM
+# For demonstration, we'll use the same features as K-means
+# We'll create a train/test split to evaluate the clustering
+# Split the data into training and testing sets (80% train, 20% test)
+X_train, X_test = train_test_split(X, test_size=0.2, random_state=42)
+# Standardize the features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+# Implement Fuzzy C-means with 10 clusters (to match K-means)
+n_clusters = 10
+m = 1.5  # Fuzziness parameter (typically between 1.5 and 3.0)
+error = 0.005  # Stopping criterion
+maxiter = 3000  # Maximum number of iterations
+# Execute FCM on training data
+cntr, u_matrix, u0, d, jm, p, fpc = cmeans(
+    X_train_scaled.T,  # skfuzzy expects transposed data
+    n_clusters,
+    m,
+    error=error,
+    maxiter=maxiter,
+    init=None
+)
+# Get hard cluster assignments from fuzzy membership
+fcm_train_labels = np.argmax(u_matrix, axis=0)
+# Use the trained centroids to predict on test data
+u_test, u0, d, jm, p, fpc = cmeans_predict(
+    X_test_scaled.T,  # Transpose for skfuzzy
+    cntr,  # Centers from training
+    m,  # Same fuzziness parameter
+    error=error,
+    maxiter=maxiter
+)
+# Convert to hard labels
+fcm_test_labels = np.argmax(u_test, axis=0)
+# Calculate silhouette score for FCM on training data
+fcm_train_silhouette = silhouette_score(X_train_scaled, fcm_train_labels)
+print(f"Fuzzy C-means Training Silhouette Score with {n_clusters} clusters: {fcm_train_silhouette:.4f}")
+# Calculate silhouette score for FCM on test data
+fcm_test_silhouette = silhouette_score(X_test_scaled, fcm_test_labels)
+print(f"Fuzzy C-means Test Silhouette Score with {n_clusters} clusters: {fcm_test_silhouette:.4f}")
+# Calculate Fuzzy C-means silhouette scores for different numbers of clusters
+fcm_silhouette_scores_train = []
+fcm_silhouette_scores_test = []
+fpcs = []
+for c in range_n_clusters:
+    # Train FCM
+    cntr, u_matrix, u0, d, jm, p, fpc = cmeans(
+        X_train_scaled.T,
+        c,
+        m,
+        error=error,
+        maxiter=maxiter,
+        init=None
+    )
+    
+    # Get training labels
+    fcm_train_labels = np.argmax(u_matrix, axis=0)
+    
+    # Predict on test data
+    u_test, u0, d, jm, p, fpc = cmeans_predict(
+        X_test_scaled.T,
+        cntr,
+        m,
+        error=error,
+        maxiter=maxiter
+    )
+    
+    # Get test labels
+    fcm_test_labels = np.argmax(u_test, axis=0)
+    
+    # Calculate silhouette scores
+    train_silhouette = silhouette_score(X_train_scaled, fcm_train_labels)
+    test_silhouette = silhouette_score(X_test_scaled, fcm_test_labels) 
+    
+    fcm_silhouette_scores_train.append(train_silhouette)
+    fcm_silhouette_scores_test.append(test_silhouette)
+    fpcs.append(fpc)
+    
+    print(f"For FCM with n_clusters = {c}:")
+    print(f"  - Training silhouette score: {train_silhouette:.4f}")
+    print(f"  - Test silhouette score: {test_silhouette:.4f}")
+    print(f"  - Fuzzy Partition Coefficient: {fpc:.4f}")
+# Plot comparison between K-means and FCM
+plt.figure(figsize=(15, 10))
+# Plot 1: Silhouette Scores Comparison
+plt.subplot(2, 2, 1)
+plt.plot(range_n_clusters, silhouette_scores, 'o-', label='K-means')
+plt.plot(range_n_clusters, fcm_silhouette_scores_train, 's-', label='FCM (Train)')
+plt.xlabel('Number of Clusters')
+plt.ylabel('Silhouette Score')
+plt.title('K-means vs FCM: Training Silhouette Scores')
+plt.legend()
+plt.grid(True)
+# Plot 2: FCM Train vs Test Performance
+plt.subplot(2, 2, 2)
+plt.plot(range_n_clusters, fcm_silhouette_scores_train, 'o-', label='FCM Train')
+plt.plot(range_n_clusters, fcm_silhouette_scores_test, 's-', label='FCM Test')
+plt.xlabel('Number of Clusters')
+plt.ylabel('Silhouette Score')
+plt.title('FCM: Train vs Test Silhouette Scores')
+plt.legend()
+plt.grid(True)
+# Plot 3: Fuzzy Partition Coefficient
+plt.subplot(2, 2, 3)
+plt.plot(range_n_clusters, fpcs, 'o-')
+plt.xlabel('Number of Clusters')
+plt.ylabel('Fuzzy Partition Coefficient')
+plt.title('FCM: Partition Coefficient (Higher is Better)')
+plt.grid(True)
+# Plot 4: Bar comparison of best configurations
+best_kmeans_idx = np.argmax(silhouette_scores)
+best_fcm_idx = np.argmax(fcm_silhouette_scores_train)
+best_scores = [
+    silhouette_scores[best_kmeans_idx], 
+    fcm_silhouette_scores_train[best_fcm_idx],
+    fcm_silhouette_scores_test[best_fcm_idx]
+]
+plt.subplot(2, 2, 4)
+plt.bar(
+    ['K-means\n(k=' + str(range_n_clusters[best_kmeans_idx]) + ')', 
+     'FCM Train\n(k=' + str(range_n_clusters[best_fcm_idx]) + ')',
+     'FCM Test\n(k=' + str(range_n_clusters[best_fcm_idx]) + ')'], 
+    best_scores
+)
+plt.ylabel('Best Silhouette Score')
+plt.title('Best Clustering Configurations')
+plt.grid(axis='y')
+plt.tight_layout()
+plt.show()
+# Apply the best FCM model to the full dataset
+best_k_fcm = range_n_clusters[best_fcm_idx]
+print(f"Best number of clusters for FCM based on silhouette score: {best_k_fcm}")
+# Rerun FCM with the best k on all data
+cntr_best, u_matrix_best, u0, d, jm, p, fpc_best = cmeans(
+    X.T,  # All data
+    best_k_fcm,
+    m,
+    error=error,
+    maxiter=maxiter,
+    init=None
+)
+# Get final cluster assignments
+fcm_labels_best = np.argmax(u_matrix_best, axis=0)
+# Create FCM-based centers for further analysis
+fcm_centers = {
+    "FCM Cluster " + str(i): 
+    swp.mk_center_dictionary(
+        sp0E[goodEvts][fcm_labels_best == i],
+        np.array(data)
+    )
+    for i in range(best_k_fcm)
+}
+# You can now use these FCM centers in your later analysis
+# For example, similar to your K-means analysis:
+# fcm_round0 = [swp.classify_and_align_evt(sp0[i], np.array(data), fcm_centers)
+#             for i in range(len(sp0))]
+# Create spike trains from FCM clustering
+fcm_spike_trains = {}
+fcm_round_all = []  # Similar to your round_all
+# If you want to compare the membership degrees of clusters
+avg_memberships = np.mean(u_matrix_best, axis=1)
+for i in range(best_k_fcm):
+    print(f"Average membership degree for FCM Cluster {i}: {avg_memberships[i]:.4f}")
